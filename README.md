@@ -125,5 +125,3 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [Lucide](https://lucide.dev/) - Beautiful icons
 
 ---
-
-Made with ❤️ by [Murodjon](https://github.com/murodjon05)
