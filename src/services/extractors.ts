@@ -1,33 +1,15 @@
 import { ExtractionResult } from '../types';
 import { getFileCategory, getFileExtension, generateId } from '../utils/fileUtils';
-import Tesseract from 'tesseract.js';
+import { createWorker } from 'tesseract.js';
 import * as pdfjsLib from 'pdfjs-dist';
 import mammoth from 'mammoth';
 import * as XLSX from 'xlsx';
 import JSZip from 'jszip';
 // @ts-ignore - Vite specific imports for offline support
 import pdfjsWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
-// @ts-ignore - Vite specific import
-import tesseractWorkerUrl from 'tesseract.js/dist/worker.min.js?url';
 
 // Configure PDF.js worker - use local bundled worker for offline support
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl;
-
-// Check if OCR offline mode is enabled
-function isOcrOfflineEnabled() {
-  if (typeof window === 'undefined') return false;
-  return localStorage.getItem('ocr-offline-enabled') === 'true';
-}
-
-// Get Tesseract configuration based on offline mode status
-function getTesseractConfig() {
-  const ocrOfflineEnabled = isOcrOfflineEnabled();
-  return {
-    workerPath: tesseractWorkerUrl,
-    // Use local language data if OCR offline mode enabled, otherwise use CDN
-    langPath: ocrOfflineEnabled ? '/tessdata' : 'https://tessdata.projectnaptha.com/4.0.0_best',
-  };
-}
 
 export async function extractText(file: File): Promise<ExtractionResult> {
   const startTime = performance.now();
@@ -352,19 +334,17 @@ async function extractJSON(file: File, result: ExtractionResult): Promise<void> 
 }
 
 async function extractImage(file: File, result: ExtractionResult): Promise<void> {
+  let worker = null;
+  let imageUrl = null;
+  
   try {
-    const imageUrl = URL.createObjectURL(file);
+    imageUrl = URL.createObjectURL(file);
     
-    // Use improved OCR settings for better accuracy with offline support
-    // Tesseract.js v5 with eng language trained data
-    const config = getTesseractConfig();
-    const ocrResult = await Tesseract.recognize(imageUrl, 'eng', {
-      logger: () => {}, // Suppress logging
-      workerPath: config.workerPath,
-      langPath: config.langPath,
-    });
+    // Create Tesseract worker with language
+    // Using simple API: createWorker(language)
+    worker = await createWorker('eng');
     
-    URL.revokeObjectURL(imageUrl);
+    const ocrResult = await worker.recognize(imageUrl);
     
     result.text = ocrResult.data.text;
     result.confidence = Math.round(ocrResult.data.confidence);
@@ -405,6 +385,18 @@ async function extractImage(file: File, result: ExtractionResult): Promise<void>
   } catch (error) {
     result.errors.push(`OCR failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     result.text = '[UNREADABLE: OCR extraction failed]';
+  } finally {
+    // Cleanup: terminate worker and revoke object URL
+    if (worker) {
+      try {
+        await worker.terminate();
+      } catch (e) {
+        console.error('Error terminating worker:', e);
+      }
+    }
+    if (imageUrl) {
+      URL.revokeObjectURL(imageUrl);
+    }
   }
 }
 
