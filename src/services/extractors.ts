@@ -5,9 +5,19 @@ import * as pdfjsLib from 'pdfjs-dist';
 import mammoth from 'mammoth';
 import * as XLSX from 'xlsx';
 import JSZip from 'jszip';
+// @ts-ignore - Vite specific imports for offline support
+import pdfjsWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+// @ts-ignore - Vite specific import
+import tesseractWorkerUrl from 'tesseract.js/dist/worker.min.js?url';
 
-// Configure PDF.js worker - use unpkg for reliable CDN
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+// Configure PDF.js worker - use local bundled worker for offline support
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl;
+
+// Tesseract.js configuration for offline support
+const TESSERACT_CONFIG = {
+  workerPath: tesseractWorkerUrl,
+  langPath: 'https://tessdata.projectnaptha.com/4.0.0_best',
+};
 
 export async function extractText(file: File): Promise<ExtractionResult> {
   const startTime = performance.now();
@@ -335,10 +345,12 @@ async function extractImage(file: File, result: ExtractionResult): Promise<void>
   try {
     const imageUrl = URL.createObjectURL(file);
     
-    // Use improved OCR settings for better accuracy
+    // Use improved OCR settings for better accuracy with offline support
     // Tesseract.js v5 with eng language trained data
     const ocrResult = await Tesseract.recognize(imageUrl, 'eng', {
       logger: () => {}, // Suppress logging
+      workerPath: TESSERACT_CONFIG.workerPath,
+      langPath: TESSERACT_CONFIG.langPath,
     });
     
     URL.revokeObjectURL(imageUrl);
