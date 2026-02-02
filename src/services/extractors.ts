@@ -13,11 +13,21 @@ import tesseractWorkerUrl from 'tesseract.js/dist/worker.min.js?url';
 // Configure PDF.js worker - use local bundled worker for offline support
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl;
 
-// Tesseract.js configuration for full offline support
-const TESSERACT_CONFIG = {
-  workerPath: tesseractWorkerUrl,
-  langPath: '/tessdata',
-};
+// Check if offline mode is enabled
+function isOfflineModeEnabled(): boolean {
+  if (typeof window === 'undefined') return false;
+  return localStorage.getItem('offline-mode-enabled') === 'true';
+}
+
+// Get Tesseract configuration based on offline mode status
+function getTesseractConfig() {
+  const offlineEnabled = isOfflineModeEnabled();
+  return {
+    workerPath: tesseractWorkerUrl,
+    // Use local language data if offline mode enabled, otherwise use CDN
+    langPath: offlineEnabled ? '/tessdata' : 'https://tessdata.projectnaptha.com/4.0.0_best',
+  };
+}
 
 export async function extractText(file: File): Promise<ExtractionResult> {
   const startTime = performance.now();
@@ -347,10 +357,11 @@ async function extractImage(file: File, result: ExtractionResult): Promise<void>
     
     // Use improved OCR settings for better accuracy with offline support
     // Tesseract.js v5 with eng language trained data
+    const config = getTesseractConfig();
     const ocrResult = await Tesseract.recognize(imageUrl, 'eng', {
       logger: () => {}, // Suppress logging
-      workerPath: TESSERACT_CONFIG.workerPath,
-      langPath: TESSERACT_CONFIG.langPath,
+      workerPath: config.workerPath,
+      langPath: config.langPath,
     });
     
     URL.revokeObjectURL(imageUrl);

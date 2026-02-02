@@ -7,6 +7,7 @@ import { ProcessingQueue } from '@/components/ProcessingQueue';
 import { FormatGuide } from '@/components/FormatGuide';
 import { StatsBar } from '@/components/StatsBar';
 import { SearchFilter } from '@/components/SearchFilter';
+import { OfflineModeToggle } from '@/components/OfflineModeToggle';
 import { ExtractionResult, ExtractionStatus, FileCategory } from '@/types';
 import { extractText } from '@/services/extractors';
 import { generateId } from '@/utils/fileUtils';
@@ -226,15 +227,8 @@ function AppContent() {
             </p>
           </div>
 
-          {/* Works Offline Badge */}
-          <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-teal-50 dark:bg-teal-900/30 border border-teal-200 dark:border-teal-700">
-            <svg className="w-5 h-5 text-teal-600 dark:text-teal-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.636 18.364a9 9 0 010-12.728m12.728 0a9 9 0 010 12.728m-9.9-2.829a5 5 0 010-7.07m7.072 0a5 5 0 010 7.07M13 12a1 1 0 11-2 0 1 1 0 012 0z" />
-            </svg>
-            <p className="text-sm text-teal-700 dark:text-teal-300">
-              <strong>Works Offline</strong>
-            </p>
-          </div>
+          {/* Offline Mode Toggle */}
+          <OfflineModeToggle />
 
           {/* No Sign-up Badge */}
           <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-orange-50 dark:bg-orange-900/30 border border-orange-200 dark:border-orange-700">

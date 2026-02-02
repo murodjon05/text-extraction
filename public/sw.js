@@ -1,21 +1,27 @@
 /// <reference lib="webworker" />
 
-const CACHE_NAME = 'text-extractor-v3';
-const STATIC_CACHE = 'text-extractor-static-v3';
-const DYNAMIC_CACHE = 'text-extractor-dynamic-v3';
+const CACHE_NAME = 'text-extractor-v4';
+const STATIC_CACHE = 'text-extractor-static-v4';
+const DYNAMIC_CACHE = 'text-extractor-dynamic-v4';
 
-// Assets that should be cached on install
+// Assets that should be cached on install (basic app shell only)
 const urlsToCache = [
   '/',
-  '/index.html',
-  '/tessdata/eng.traineddata'
+  '/index.html'
 ];
 
-// External resources that need to be cached for offline use
+// External resources that can be cached for offline use
 const EXTERNAL_RESOURCES = [
   'https://unpkg.com/pdfjs-dist@',
   'https://cdn.jsdelivr.net/npm/tesseract.js@'
 ];
+
+// Offline mode resources (only cached when user opts in)
+const OFFLINE_RESOURCES = [
+  '/tessdata/eng.traineddata'
+];
+
+let offlineModeEnabled = false;
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -39,19 +45,25 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Handle different types of requests with stale-while-revalidate strategy
+  // Handle different types of requests
   event.respondWith(
     caches.match(request).then((cachedResponse) => {
       const fetchPromise = fetch(request)
         .then((networkResponse) => {
           if (networkResponse && networkResponse.status === 200) {
-            // Cache successful responses
-            const cacheName = isExternalResource(url.href) ? DYNAMIC_CACHE : STATIC_CACHE;
-            const responseToCache = networkResponse.clone();
-            
-            caches.open(cacheName).then((cache) => {
-              cache.put(request, responseToCache);
-            });
+            // Only cache external resources if offline mode is enabled
+            if (isExternalResource(url.href) && offlineModeEnabled) {
+              const responseToCache = networkResponse.clone();
+              caches.open(DYNAMIC_CACHE).then((cache) => {
+                cache.put(request, responseToCache);
+              });
+            } else if (!isExternalResource(url.href)) {
+              // Always cache app shell resources
+              const responseToCache = networkResponse.clone();
+              caches.open(STATIC_CACHE).then((cache) => {
+                cache.put(request, responseToCache);
+              });
+            }
           }
           return networkResponse;
         })
@@ -103,6 +115,33 @@ self.addEventListener('fetch', (event) => {
 function isExternalResource(url) {
   return EXTERNAL_RESOURCES.some(resource => url.includes(resource));
 }
+
+// Handle messages from the main thread
+self.addEventListener('message', (event) => {
+  if (event.data.type === 'ENABLE_OFFLINE_MODE') {
+    offlineModeEnabled = true;
+    
+    // Cache offline resources
+    event.waitUntil(
+      caches.open(STATIC_CACHE)
+        .then((cache) => {
+          return cache.addAll(OFFLINE_RESOURCES);
+        })
+        .then(() => {
+          console.log('Offline mode enabled - resources cached');
+          // Notify all clients
+          self.clients.matchAll().then((clients) => {
+            clients.forEach((client) => {
+              client.postMessage({ type: 'OFFLINE_MODE_ENABLED' });
+            });
+          });
+        })
+        .catch((err) => {
+          console.error('Failed to cache offline resources:', err);
+        })
+    );
+  }
+});
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
