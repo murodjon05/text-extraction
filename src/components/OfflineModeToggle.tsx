@@ -2,114 +2,117 @@ import { useState, useEffect } from 'react';
 import { cn } from '@/utils/cn';
 
 export function OfflineModeToggle() {
-  const [isOfflineEnabled, setIsOfflineEnabled] = useState(false);
-  const [isCached, setIsCached] = useState(false);
+  const [isOcrEnabled, setIsOcrEnabled] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Check if offline mode was previously enabled
-    const stored = localStorage.getItem('offline-mode-enabled');
+    // Check if OCR offline mode was previously enabled
+    const stored = localStorage.getItem('ocr-offline-enabled');
     if (stored === 'true') {
-      setIsOfflineEnabled(true);
-      checkCacheStatus();
+      setIsOcrEnabled(true);
+    }
+
+    // Listen for messages from service worker
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('message', (event) => {
+        if (event.data.type === 'OCR_OFFLINE_ENABLED') {
+          setIsOcrEnabled(true);
+          setIsLoading(false);
+          setProgress(0);
+        }
+      });
     }
   }, []);
 
-  const checkCacheStatus = async () => {
-    if ('caches' in window) {
-      try {
-        const cache = await caches.open('text-extractor-static-v3');
-        const tessdataResponse = await cache.match('/tessdata/eng.traineddata');
-        setIsCached(!!tessdataResponse);
-      } catch {
-        setIsCached(false);
-      }
-    }
+  const checkOnlineStatus = () => {
+    return navigator.onLine;
   };
 
-  const enableOfflineMode = async () => {
+  const enableOcrOffline = async () => {
+    // Check if already online
+    if (!checkOnlineStatus()) {
+      setError('You need an internet connection to download OCR language data.');
+      setTimeout(() => setError(null), 5000);
+      return;
+    }
+
     setIsLoading(true);
     setProgress(0);
+    setError(null);
 
     try {
-      // Simulate progress
+      // Simulate progress (actual download happens in service worker)
       const progressInterval = setInterval(() => {
-        setProgress(prev => Math.min(prev + 5, 90));
-      }, 200);
+        setProgress(prev => {
+          if (prev >= 90) {
+            clearInterval(progressInterval);
+            return 90;
+          }
+          return prev + 2;
+        });
+      }, 300);
 
-      // Send message to service worker to cache resources
+      // Send message to service worker to cache OCR resources
       if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
         navigator.serviceWorker.controller.postMessage({
-          type: 'ENABLE_OFFLINE_MODE'
+          type: 'ENABLE_OCR_OFFLINE'
         });
 
-        // Wait a bit for caching to complete
-        await new Promise(resolve => setTimeout(resolve, 3000));
+        // Wait for download to complete (approximate)
+        await new Promise(resolve => setTimeout(resolve, 8000));
+      } else {
+        // If service worker not ready, try again after a delay
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        if (navigator.serviceWorker.controller) {
+          navigator.serviceWorker.controller.postMessage({
+            type: 'ENABLE_OCR_OFFLINE'
+          });
+          await new Promise(resolve => setTimeout(resolve, 8000));
+        }
       }
 
       clearInterval(progressInterval);
       setProgress(100);
       
-      localStorage.setItem('offline-mode-enabled', 'true');
-      setIsOfflineEnabled(true);
-      setIsCached(true);
+      localStorage.setItem('ocr-offline-enabled', 'true');
+      setIsOcrEnabled(true);
       
       setTimeout(() => {
         setIsLoading(false);
         setProgress(0);
-      }, 500);
+      }, 1000);
     } catch (error) {
-      console.error('Failed to enable offline mode:', error);
+      console.error('Failed to enable OCR offline mode:', error);
+      setError('Failed to download. Please try again.');
       setIsLoading(false);
       setProgress(0);
     }
   };
 
-  const disableOfflineMode = async () => {
-    try {
-      if ('caches' in window) {
-        const staticCache = await caches.open('text-extractor-static-v3');
-        const dynamicCache = await caches.open('text-extractor-dynamic-v3');
-        
-        // Delete tessdata and external resources
-        await staticCache.delete('/tessdata/eng.traineddata');
-        
-        // Get all cached URLs and delete external ones
-        const staticKeys = await staticCache.keys();
-        const dynamicKeys = await dynamicCache.keys();
-        
-        const externalUrls = [
-          'https://unpkg.com/pdfjs-dist@',
-          'https://cdn.jsdelivr.net/npm/tesseract.js@'
-        ];
-        
-        for (const request of staticKeys) {
-          if (externalUrls.some(url => request.url.includes(url))) {
-            await staticCache.delete(request);
-          }
-        }
-        
-        for (const request of dynamicKeys) {
-          await dynamicCache.delete(request);
-        }
-      }
+  // Show error message
+  if (error) {
+    return (
+      <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-700">
+        <svg className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+        </svg>
+        <p className="text-sm text-red-700 dark:text-red-300">
+          {error}
+        </p>
+      </div>
+    );
+  }
 
-      localStorage.removeItem('offline-mode-enabled');
-      setIsOfflineEnabled(false);
-      setIsCached(false);
-    } catch (error) {
-      console.error('Failed to disable offline mode:', error);
-    }
-  };
-
+  // Show loading state
   if (isLoading) {
     return (
       <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700">
         <div className="w-5 h-5 border-2 border-amber-600 border-t-transparent rounded-full animate-spin flex-shrink-0" />
         <div className="flex flex-col">
           <span className="text-sm font-medium text-amber-700 dark:text-amber-300">
-            Caching... {progress}%
+            Downloading OCR data... {progress}%
           </span>
           <div className="w-24 h-1 bg-amber-200 dark:bg-amber-800 rounded-full mt-1">
             <div 
@@ -122,45 +125,36 @@ export function OfflineModeToggle() {
     );
   }
 
-  if (isOfflineEnabled && isCached) {
+  // Show enabled state (no way to disable - one way only)
+  if (isOcrEnabled) {
     return (
-      <button
-        onClick={disableOfflineMode}
-        className={cn(
-          "flex items-center gap-2 px-4 py-2.5 rounded-xl transition-all",
-          "bg-teal-50 dark:bg-teal-900/30 border border-teal-200 dark:border-teal-700",
-          "hover:bg-teal-100 dark:hover:bg-teal-900/50"
-        )}
-        title="Click to disable offline mode and free up storage"
-      >
+      <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-teal-50 dark:bg-teal-900/30 border border-teal-200 dark:border-teal-700">
         <svg className="w-5 h-5 text-teal-600 dark:text-teal-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.636 18.364a9 9 0 010-12.728m12.728 0a9 9 0 010 12.728m-9.9-2.829a5 5 0 010-7.07m7.072 0a5 5 0 010 7.07M13 12a1 1 0 11-2 0 1 1 0 012 0z" />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
         </svg>
         <p className="text-sm text-teal-700 dark:text-teal-300">
-          <strong>Offline Mode On</strong>
+          <strong>Images Offline Ready</strong>
         </p>
-        <svg className="w-4 h-4 text-teal-500 dark:text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-        </svg>
-      </button>
+      </div>
     );
   }
 
+  // Show button to enable (default state)
   return (
     <button
-      onClick={enableOfflineMode}
+      onClick={enableOcrOffline}
       className={cn(
         "flex items-center gap-2 px-4 py-2.5 rounded-xl transition-all",
-        "bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-600",
-        "hover:bg-slate-100 dark:hover:bg-slate-700"
+        "bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-700",
+        "hover:bg-indigo-100 dark:hover:bg-indigo-900/50"
       )}
-      title="Enable offline mode to use without internet (uses ~25MB storage)"
+      title="Enable offline support for image OCR (requires ~22MB download)"
     >
-      <svg className="w-5 h-5 text-slate-500 dark:text-slate-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.636 18.364a9 9 0 010-12.728m12.728 0a9 9 0 010 12.728m-9.9-2.829a5 5 0 010-7.07m7.072 0a5 5 0 010 7.07M13 12a1 1 0 11-2 0 1 1 0 012 0z" />
+      <svg className="w-5 h-5 text-indigo-600 dark:text-indigo-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
       </svg>
-      <p className="text-sm text-slate-600 dark:text-slate-400">
-        <strong>Enable Offline</strong> <span className="text-xs">(~25MB)</span>
+      <p className="text-sm text-indigo-700 dark:text-indigo-300">
+        <strong>Enable Image OCR Offline</strong> <span className="text-xs">(~22MB)</span>
       </p>
     </button>
   );

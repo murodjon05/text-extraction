@@ -4,24 +4,24 @@ const CACHE_NAME = 'text-extractor-v4';
 const STATIC_CACHE = 'text-extractor-static-v4';
 const DYNAMIC_CACHE = 'text-extractor-dynamic-v4';
 
-// Assets that should be cached on install (basic app shell only)
+// Assets that should be cached on install (app shell + external workers for document support)
 const urlsToCache = [
   '/',
   '/index.html'
 ];
 
-// External resources that can be cached for offline use
+// External resources that are cached for document support (auto-enabled)
 const EXTERNAL_RESOURCES = [
   'https://unpkg.com/pdfjs-dist@',
   'https://cdn.jsdelivr.net/npm/tesseract.js@'
 ];
 
-// Offline mode resources (only cached when user opts in)
-const OFFLINE_RESOURCES = [
+// OCR resources (only cached when user explicitly enables offline mode for images)
+const OCR_RESOURCES = [
   '/tessdata/eng.traineddata'
 ];
 
-let offlineModeEnabled = false;
+let ocrOfflineEnabled = false;
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -51,14 +51,15 @@ self.addEventListener('fetch', (event) => {
       const fetchPromise = fetch(request)
         .then((networkResponse) => {
           if (networkResponse && networkResponse.status === 200) {
-            // Only cache external resources if offline mode is enabled
-            if (isExternalResource(url.href) && offlineModeEnabled) {
+            // Cache external resources (PDF.js and Tesseract workers) for document support
+            // This happens automatically for offline document functionality
+            if (isExternalResource(url.href)) {
               const responseToCache = networkResponse.clone();
               caches.open(DYNAMIC_CACHE).then((cache) => {
                 cache.put(request, responseToCache);
               });
-            } else if (!isExternalResource(url.href)) {
-              // Always cache app shell resources
+            } else if (!isOcrResource(url.href)) {
+              // Always cache app shell resources (but not OCR data unless explicitly enabled)
               const responseToCache = networkResponse.clone();
               caches.open(STATIC_CACHE).then((cache) => {
                 cache.put(request, responseToCache);
@@ -116,28 +117,33 @@ function isExternalResource(url) {
   return EXTERNAL_RESOURCES.some(resource => url.includes(resource));
 }
 
+// Check if URL is an OCR resource
+function isOcrResource(url) {
+  return OCR_RESOURCES.some(resource => url.includes(resource));
+}
+
 // Handle messages from the main thread
 self.addEventListener('message', (event) => {
-  if (event.data.type === 'ENABLE_OFFLINE_MODE') {
-    offlineModeEnabled = true;
+  if (event.data.type === 'ENABLE_OCR_OFFLINE') {
+    ocrOfflineEnabled = true;
     
-    // Cache offline resources
+    // Cache OCR resources for offline image processing
     event.waitUntil(
       caches.open(STATIC_CACHE)
         .then((cache) => {
-          return cache.addAll(OFFLINE_RESOURCES);
+          return cache.addAll(OCR_RESOURCES);
         })
         .then(() => {
-          console.log('Offline mode enabled - resources cached');
+          console.log('OCR offline mode enabled - language data cached');
           // Notify all clients
           self.clients.matchAll().then((clients) => {
             clients.forEach((client) => {
-              client.postMessage({ type: 'OFFLINE_MODE_ENABLED' });
+              client.postMessage({ type: 'OCR_OFFLINE_ENABLED' });
             });
           });
         })
         .catch((err) => {
-          console.error('Failed to cache offline resources:', err);
+          console.error('Failed to cache OCR resources:', err);
         })
     );
   }

@@ -13,19 +13,19 @@ import tesseractWorkerUrl from 'tesseract.js/dist/worker.min.js?url';
 // Configure PDF.js worker - use local bundled worker for offline support
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl;
 
-// Check if offline mode is enabled
-function isOfflineModeEnabled(): boolean {
+// Check if OCR offline mode is enabled
+function isOcrOfflineEnabled() {
   if (typeof window === 'undefined') return false;
-  return localStorage.getItem('offline-mode-enabled') === 'true';
+  return localStorage.getItem('ocr-offline-enabled') === 'true';
 }
 
 // Get Tesseract configuration based on offline mode status
 function getTesseractConfig() {
-  const offlineEnabled = isOfflineModeEnabled();
+  const ocrOfflineEnabled = isOcrOfflineEnabled();
   return {
     workerPath: tesseractWorkerUrl,
-    // Use local language data if offline mode enabled, otherwise use CDN
-    langPath: offlineEnabled ? '/tessdata' : 'https://tessdata.projectnaptha.com/4.0.0_best',
+    // Use local language data if OCR offline mode enabled, otherwise use CDN
+    langPath: ocrOfflineEnabled ? '/tessdata' : 'https://tessdata.projectnaptha.com/4.0.0_best',
   };
 }
 
