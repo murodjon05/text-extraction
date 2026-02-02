@@ -11,6 +11,9 @@ import pdfjsWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 // Configure PDF.js worker - use local bundled worker for offline support
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl;
 
+// Local path for OCR language data (cached by service worker)
+const TESSDATA_PATH = '/tessdata';
+
 export async function extractText(file: File): Promise<ExtractionResult> {
   const startTime = performance.now();
   const category = getFileCategory(file.name);
@@ -340,9 +343,16 @@ async function extractImage(file: File, result: ExtractionResult): Promise<void>
   try {
     imageUrl = URL.createObjectURL(file);
     
-    // Create Tesseract worker with language
-    // Using simple API: createWorker(language)
-    worker = await createWorker('eng');
+    // Create Tesseract worker with local language data
+    // Using local cached tessdata for offline support
+    worker = await createWorker('eng', 1, {
+      logger: () => {}, // Suppress logging
+      errorHandler: (err) => console.error('Tesseract error:', err),
+    });
+    
+    // Configure worker to use local tessdata
+    // @ts-ignore - internal API
+    worker.langPath = TESSDATA_PATH;
     
     const ocrResult = await worker.recognize(imageUrl);
     
