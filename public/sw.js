@@ -1,20 +1,20 @@
 /// <reference lib="webworker" />
 
-const CACHE_NAME = 'text-extractor-v2';
-const STATIC_CACHE = 'text-extractor-static-v2';
-const DYNAMIC_CACHE = 'text-extractor-dynamic-v2';
+const CACHE_NAME = 'text-extractor-v3';
+const STATIC_CACHE = 'text-extractor-static-v3';
+const DYNAMIC_CACHE = 'text-extractor-dynamic-v3';
 
 // Assets that should be cached on install
 const urlsToCache = [
   '/',
-  '/index.html'
+  '/index.html',
+  '/tessdata/eng.traineddata'
 ];
 
 // External resources that need to be cached for offline use
 const EXTERNAL_RESOURCES = [
   'https://unpkg.com/pdfjs-dist@',
-  'https://cdn.jsdelivr.net/npm/tesseract.js@',
-  'https://tessdata.projectnaptha.com/'
+  'https://cdn.jsdelivr.net/npm/tesseract.js@'
 ];
 
 self.addEventListener('install', (event) => {
@@ -39,64 +39,65 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Handle different types of requests
+  // Handle different types of requests with stale-while-revalidate strategy
   event.respondWith(
     caches.match(request).then((cachedResponse) => {
-      // Return cached response if available
-      if (cachedResponse) {
-        // For external resources, refresh cache in background
-        if (isExternalResource(url.href)) {
-          fetchAndCache(request, DYNAMIC_CACHE);
-        }
-        return cachedResponse;
-      }
-
-      // Fetch from network
-      return fetch(request)
+      const fetchPromise = fetch(request)
         .then((networkResponse) => {
-          if (!networkResponse || networkResponse.status !== 200) {
-            return networkResponse;
+          if (networkResponse && networkResponse.status === 200) {
+            // Cache successful responses
+            const cacheName = isExternalResource(url.href) ? DYNAMIC_CACHE : STATIC_CACHE;
+            const responseToCache = networkResponse.clone();
+            
+            caches.open(cacheName).then((cache) => {
+              cache.put(request, responseToCache);
+            });
           }
-
-          // Cache successful responses
-          const cacheName = isExternalResource(url.href) ? DYNAMIC_CACHE : STATIC_CACHE;
-          const responseToCache = networkResponse.clone();
-          
-          caches.open(cacheName).then((cache) => {
-            cache.put(request, responseToCache);
-          });
-
           return networkResponse;
         })
-        .catch(() => {
-          // Return offline fallback for navigation requests
-          if (request.mode === 'navigate') {
-            return caches.match('/index.html');
+        .catch((error) => {
+          console.error('Fetch failed:', error);
+          // If network fails and we have no cache, throw error
+          if (!cachedResponse) {
+            throw error;
           }
-          
-          // For other requests, return a generic error
-          return new Response('Offline - Resource not available', {
+        });
+
+      // Return cached version immediately if available, otherwise wait for network
+      return cachedResponse || fetchPromise;
+    }).catch(() => {
+      // Return offline fallback for navigation requests
+      if (request.mode === 'navigate') {
+        return caches.match('/index.html');
+      }
+      
+      // For external resources, return a more helpful error
+      if (isExternalResource(url.href)) {
+        return new Response(
+          JSON.stringify({ 
+            error: 'Offline', 
+            message: 'This resource is not available offline. Please connect to the internet and try again.' 
+          }), {
             status: 503,
             statusText: 'Service Unavailable',
             headers: new Headers({
-              'Content-Type': 'text/plain'
+              'Content-Type': 'application/json'
             })
-          });
-        });
+          }
+        );
+      }
+      
+      // For other requests, return a generic error
+      return new Response('Offline - Resource not available', {
+        status: 503,
+        statusText: 'Service Unavailable',
+        headers: new Headers({
+          'Content-Type': 'text/plain'
+        })
+      });
     })
   );
 });
-
-// Helper function to fetch and cache in background
-function fetchAndCache(request, cacheName) {
-  fetch(request).then((response) => {
-    if (response && response.status === 200) {
-      caches.open(cacheName).then((cache) => {
-        cache.put(request, response);
-      });
-    }
-  }).catch(() => {});
-}
 
 // Check if URL is an external resource we need to cache
 function isExternalResource(url) {
